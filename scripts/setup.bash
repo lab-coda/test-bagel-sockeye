@@ -13,6 +13,6 @@ apptainer pull sif/api.sif     docker://neurobagel/api:latest
 apptainer pull sif/fapi.sif    docker://neurobagel/federation_api:latest
 apptainer pull sif/query.sif   docker://neurobagel/query_tool:latest
 
-cd recipes/init_data
+cd $WORK/recipes/init_data
 python -m init_data.process_jsonld ../data ../state/data
 cd ..
