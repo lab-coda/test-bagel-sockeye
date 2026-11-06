@@ -6,7 +6,8 @@ Writes two TSVs:
      using fMRIPrep's preprocessed images as evidence of which
      modalities each subject/session has.
   2. A Nipoppy-style processing status file for `bagel derivatives`,
-     marking fMRIPrep as SUCCESS when the subject's HTML report exists.
+     marking fMRIPrep as SUCCESS when the subject's HTML report exists
+     (a DataLad symlink counts, so annexed content need not be fetched).
   3. (Optional, --participants) A starter phenotypic TSV for `bagel pheno`:
      one row per subject (or subject-session), plus placeholder phenotype
      columns filled with "n/a" for you to complete or annotate as missing.
@@ -23,6 +24,7 @@ Usage:
 import argparse
 import csv
 import json
+import os
 import re
 from pathlib import Path
 
@@ -75,7 +77,8 @@ def build_bids_table(fmriprep_dir):
                 "sub": f"sub-{ents['sub']}",
                 "ses": f"ses-{ents['ses']}" if "ses" in ents else "",
                 "suffix": suffix,
-                "path": str(f.resolve()),
+                # not resolve(): that would follow annex symlinks into .git/annex
+                "path": str(f),
             })
     return rows
 
@@ -86,7 +89,9 @@ def build_proc_status(fmriprep_dir, version):
         if not sub_dir.is_dir():
             continue
         sub = sub_dir.name
-        report_ok = (fmriprep_dir / f"{sub}.html").exists()
+        # lexists: in a DataLad clone, annexed files without fetched content
+        # are broken symlinks, but still prove the report was produced
+        report_ok = os.path.lexists(fmriprep_dir / f"{sub}.html")
         status = "SUCCESS" if report_ok else "FAIL"
         sessions = sorted(d.name for d in sub_dir.glob("ses-*") if d.is_dir())
         for ses in sessions or [""]:
