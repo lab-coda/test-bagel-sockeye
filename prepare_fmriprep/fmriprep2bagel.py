@@ -7,13 +7,17 @@ Writes two TSVs:
      modalities each subject/session has.
   2. A Nipoppy-style processing status file for `bagel derivatives`,
      marking fMRIPrep as SUCCESS when the subject's HTML report exists.
+  3. (Optional, --participants) A starter phenotypic TSV for `bagel pheno`:
+     one row per subject (or subject-session), plus placeholder phenotype
+     columns filled with "n/a" for you to complete or annotate as missing.
 
 Standard library only, so it runs with any python3 on Sockeye.
 
 Usage:
   python3 fmriprep2bagel.py /path/to/derivatives/fmriprep \
       --bids-table MyDataset_bids.tsv \
-      --proc-status MyDataset_proc_status.tsv
+      --proc-status MyDataset_proc_status.tsv \
+      --participants participants.tsv
 """
 
 import argparse
@@ -99,6 +103,28 @@ def build_proc_status(fmriprep_dir, version):
     return rows
 
 
+def build_participants(fmriprep_dir, pheno_cols):
+    """One row per subject, or per subject-session if any sessions exist."""
+    pairs = []
+    for sub_dir in sorted(fmriprep_dir.glob("sub-*")):
+        if not sub_dir.is_dir():
+            continue
+        sessions = sorted(d.name for d in sub_dir.glob("ses-*") if d.is_dir())
+        pairs.append((sub_dir.name, sessions))
+    longitudinal = any(s for _, s in pairs)
+
+    fields = ["participant_id"] + (["session_id"] if longitudinal else []) + pheno_cols
+    rows = []
+    for sub, sessions in pairs:
+        for ses in sessions or [""]:
+            row = {"participant_id": sub, **{c: "n/a" for c in pheno_cols}}
+            if longitudinal:
+                # subjects without session folders still need a non-missing ID
+                row["session_id"] = ses or "ses-unknown"
+            rows.append(row)
+    return rows, fields
+
+
 def write_tsv(path, rows, fields):
     with open(path, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=fields, delimiter="\t")
@@ -114,6 +140,11 @@ def main():
     p.add_argument("--proc-status", type=Path, default=Path("proc_status.tsv"))
     p.add_argument("--version", default=None,
                    help="fMRIPrep version (default: read from dataset_description.json)")
+    p.add_argument("--participants", type=Path, default=None,
+                   help="Also write a starter phenotypic TSV here")
+    p.add_argument("--pheno-columns", default="age,sex",
+                   help="Comma-separated placeholder columns for --participants "
+                        "(default: age,sex)")
     args = p.parse_args()
 
     d = args.fmriprep_dir.resolve()
@@ -134,6 +165,14 @@ def main():
     print(f"fMRIPrep {version}")
     print(f"BIDS table:  {len(bids_rows)} images, {n_sub} subjects -> {args.bids_table}")
     print(f"Proc status: {n_ok}/{len(proc_rows)} subject-sessions SUCCESS -> {args.proc_status}")
+
+    if args.participants:
+        cols = [c.strip() for c in args.pheno_columns.split(",") if c.strip()]
+        if not cols:
+            raise SystemExit("--pheno-columns needs at least one column")
+        part_rows, part_fields = build_participants(d, cols)
+        write_tsv(args.participants, part_rows, part_fields)
+        print(f"Participants: {len(part_rows)} rows, columns {part_fields} -> {args.participants}")
 
 
 if __name__ == "__main__":
