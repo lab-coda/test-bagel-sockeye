@@ -6,8 +6,9 @@ Writes two TSVs:
      using fMRIPrep's preprocessed images as evidence of which
      modalities each subject/session has.
   2. A Nipoppy-style processing status file for `bagel derivatives`,
-     marking fMRIPrep as SUCCESS when the subject's HTML report exists
-     (a DataLad symlink counts, so annexed content need not be fetched).
+     marking fMRIPrep as SUCCESS when the HTML report exists, either per
+     session (sub-01_ses-1.html) or per subject (sub-01.html). A DataLad
+     symlink counts, so annexed content need not be fetched.
   3. (Optional, --participants) A starter phenotypic TSV for `bagel pheno`:
      one row per subject (or subject-session), plus placeholder phenotype
      columns filled with "n/a" for you to complete or annotate as missing.
@@ -89,12 +90,15 @@ def build_proc_status(fmriprep_dir, version):
         if not sub_dir.is_dir():
             continue
         sub = sub_dir.name
-        # lexists: in a DataLad clone, annexed files without fetched content
-        # are broken symlinks, but still prove the report was produced
-        report_ok = os.path.lexists(fmriprep_dir / f"{sub}.html")
-        status = "SUCCESS" if report_ok else "FAIL"
         sessions = sorted(d.name for d in sub_dir.glob("ses-*") if d.is_dir())
         for ses in sessions or [""]:
+            # one report per subject, or per session (e.g. sub-01_ses-1.html,
+            # as in the ReproBrainChart datasets)
+            reports = [f"{sub}_{ses}.html", f"{sub}.html"] if ses else [f"{sub}.html"]
+            # lexists: in a DataLad clone, annexed files without fetched content
+            # are broken symlinks, but still prove the report was produced
+            report_ok = any(os.path.lexists(fmriprep_dir / r) for r in reports)
+            status = "SUCCESS" if report_ok else "FAIL"
             rows.append({
                 "participant_id": sub.removeprefix("sub-"),
                 "bids_participant_id": sub,
